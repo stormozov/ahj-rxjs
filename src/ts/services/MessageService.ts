@@ -1,4 +1,6 @@
-import { Observable, from } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
+import { ajax, AjaxError } from 'rxjs/ajax';
+import { catchError, map } from 'rxjs/operators';
 import { IMessage, IUnreadMessagesResponse } from '../shared/interfaces';
 
 /**
@@ -42,13 +44,10 @@ export class MessageService {
    * @throws {Error} При ошибке HTTP-запроса
    *
    * @description
-   * 1. Выполняет GET-запрос к endpoint `/messages/unread`
-   * 2. Обрабатывает ответ:
-   *    - Проверяет статус HTTP-ответа
-   *    - Парсит JSON-данные
-   *    - Извлекает массив сообщений из ответа
-   * 3. Оборачивает Promise в Observable
-   * 4. Реализует обработку ошибок через оператор catchError
+   * 1. Выполняет GET-запрос к endpoint `/messages/unread` с помощью rxjs/ajax
+   * 2. Автоматически парсит JSON-ответ
+   * 3. Извлекает массив сообщений из ответа
+   * 4. Обрабатывает ошибки (включая сетевые и HTTP-ошибки)
    *
    * @example
    * const service = new MessageService();
@@ -58,18 +57,18 @@ export class MessageService {
    * });
    */
   getUnreadMessages(): Observable<IMessage[]> {
-    const promise = fetch(this._apiMethods.messages.unread)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json() as Promise<IUnreadMessagesResponse>;
-      })
-      .then((data) => data.messages)
-      .catch((error) => {
-        throw new Error(error);
-      });
+    return ajax
+      .getJSON<IUnreadMessagesResponse>(this._apiMethods.messages.unread)
+      .pipe(
+        map((response) => response.messages),
+        catchError((error: AjaxError) => {
+          // Формируем понятное сообщение об ошибке
+          const errorMessage = error.status
+            ? `HTTP ${error.status}: ${error.response}`
+            : 'Network or server error occurred';
 
-    return from(promise);
+          return throwError(() => new Error(errorMessage));
+        })
+      );
   }
 }
