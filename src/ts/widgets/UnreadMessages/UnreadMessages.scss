@@ -9,6 +9,16 @@
       font-weight: 500;
     }
 
+    &-title-count {
+      cursor: default;
+
+      margin-left: 8px;
+
+      font-size: 0.875rem;
+      color: #999999;
+      vertical-align: top;
+    }
+
     &-list {
       margin-top: 16px;
     }

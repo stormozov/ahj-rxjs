@@ -13,6 +13,7 @@ export class UnreadMessages {
   private _container!: HTMLElement;
   private _messageList!: HTMLElement;
   private _subscription: Subscription | null = null;
+  private _messageCounter!: HTMLElement;
 
   constructor(
     private readonly _containerSelector: string,
@@ -80,7 +81,19 @@ export class UnreadMessages {
       tag: 'h2',
       className: 'widget-email__unread-title',
       text: 'Новые сообщения',
+      children: [
+        {
+          tag: 'sup',
+          className: 'widget-email__unread-title-count',
+          text: '0',
+        },
+      ],
     });
+
+    const messageCounter = messageTitle.querySelector('sup');
+    if (messageCounter instanceof HTMLElement) {
+      this._messageCounter = messageCounter;
+    }
 
     this._container.append(messageTitle);
   }
@@ -114,7 +127,10 @@ export class UnreadMessages {
 
     this._subscription = this._messageService.getUnreadMessages().subscribe({
       next: (messages) => {
+        // Отображаем список сообщений в DOM
         this._renderMessages(messages);
+        // Обновляем количество непрочитанных сообщений
+        this._updateMessageCounter(messages.length);
       },
       error: (error) => {
         console.warn('Не удалось загрузить сообщения:', error);
@@ -227,6 +243,21 @@ export class UnreadMessages {
     });
 
     return listItem;
+  }
+
+  /**
+   * Метод обновляет количество непрочитанных сообщений.
+   *
+   * @param {number} count - Количество непрочитанных сообщений
+   *
+   * @description
+   * - Если элемент счетчика не существует, метод ничего не делает.
+   * - Если элемент счетчика существует, метод получает элемент с количеством
+   *   непрочитанных сообщений и добавляет его в виде текста внутри тега
+   *   `<sup></sup>`.
+   */
+  private _updateMessageCounter(count: number): void {
+    if (this._messageCounter) this._messageCounter.textContent = String(count);
   }
 
   /**
