@@ -1,8 +1,17 @@
-import { MessageService } from './../../services/MessageService';
-import { Subscription } from 'rxjs';
+import {
+  catchError,
+  interval,
+  merge,
+  of,
+  startWith,
+  Subscription,
+  switchMap,
+} from 'rxjs';
 import { IMessage } from '../../shared/interfaces';
 import createElement from '../../utils/createElementFunction';
 import { formatTimestamp, truncateText } from '../../utils/formatters';
+import { createSseObservable } from '../../utils/sseObservable';
+import { MessageService } from './../../services/MessageService';
 import './UnreadMessages.scss';
 
 /**
@@ -113,30 +122,66 @@ export class UnreadMessages {
   }
 
   /**
-   * Метод загружает список непрочитанных сообщений.
+   * Инициализирует загрузку и обновление непрочитанных сообщений через SSE
+   * и резервный опрос
    *
+   * @private
    * @description
-   * Метод использует технологию RxJS для работы с асинхронной обработкой.
+   * 1. Отменяет предыдущую подписку (если есть)
+   * 2. Создает поток событий Server-Sent Events (SSE) для реального времени
+   * 3. Настройка резервного опроса каждые 30 секунд
+   * 4. Объединяет источники событий и обрабатывает ошибки
+   * 5. При получении данных:
+   *    - Отрисовывает сообщения
+   *    - Обновляет счетчик непрочитанных
    *
-   * @see MessageService - Класс для работы с API для получения непрочитанных сообщений
-   * @see _renderMessages - Метод для отображения списка сообщений
+   * @see {@link createSseObservable} - Создание потока SSE
+   * @see {@link MessageService.getUnreadMessages} - Получение списка сообщений
+   * @see _renderMessages - Отрисовка сообщений
+   * @see _updateMessageCounter - Обновление счетчика
+   * @see _showError - Отображение ошибок
    */
   private _loadMessages(): void {
-    // Отменяем предыдущую подписку (защита от утечек)
     if (this._subscription) this._subscription.unsubscribe();
 
-    this._subscription = this._messageService.getUnreadMessages().subscribe({
-      next: (messages) => {
-        // Отображаем список сообщений в DOM
-        this._renderMessages(messages);
-        // Обновляем количество непрочитанных сообщений
-        this._updateMessageCounter(messages.length);
-      },
-      error: (error) => {
-        console.warn('Не удалось загрузить сообщения:', error);
-        this._showError('Не удалось загрузить сообщения');
-      },
-    });
+    const sseUrl = `${process.env.SERVER_URL}/events/unread-updates`;
+
+    // 1. Основной триггер — SSE (реактивные обновления)
+    const sse$ = createSseObservable(sseUrl);
+
+    // 2. Резервный триггер — опрос каждые 30 секунд (на случай, если SSE
+    // не работает). Первый запрос происходит сразу
+    const fallbackPolling$ = interval(30_000).pipe(startWith(0));
+
+    // 3. Объединяем: если пришло SSE — обновляем, иначе — ждём polling
+    const trigger$ = merge(sse$, fallbackPolling$);
+
+    this._subscription = trigger$
+      .pipe(
+        switchMap(() =>
+          this._messageService.getUnreadMessages().pipe(
+            catchError((error) => {
+              console.warn('Не удалось загрузить сообщения:', error);
+              this._showError(
+                'Не удалось загрузить сообщения. Повторная попытка...'
+              );
+              return of([]); // продолжаем работу с пустым списком
+            })
+          )
+        ),
+        // Защита от полного падения потока
+        catchError((error) => {
+          console.error('Критическая ошибка в потоке обновлений:', error);
+          this._showError('Сервис временно недоступен');
+          return of([]);
+        })
+      )
+      .subscribe({
+        next: (messages) => {
+          this._renderMessages(messages);
+          this._updateMessageCounter(messages.length);
+        },
+      });
   }
 
   /**
