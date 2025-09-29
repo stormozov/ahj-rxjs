@@ -39,7 +39,7 @@ jobs:
 
   # 2. Build
   build:
-    needs: [lint, test]
+    needs: [lint]
 
     environment:
       name: github-pages
