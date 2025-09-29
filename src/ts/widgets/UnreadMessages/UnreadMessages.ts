@@ -23,6 +23,8 @@ export class UnreadMessages {
   private _messageList!: HTMLElement;
   private _subscription: Subscription | null = null;
   private _messageCounter!: HTMLElement;
+  private _isInitialLoad = true;
+  private _existingMessageIds = new Set<string>();
 
   constructor(
     private readonly _containerSelector: string,
@@ -83,7 +85,7 @@ export class UnreadMessages {
   /**
    * Метод создает заголовок списка сообщений, и добавляет его в контейнер.
    *
-   * @see createElement - Функция для создания DOM-элемента
+   * @see {@link createElement} - Функция для создания DOM-элементов
    */
   private _createMessageTitle(): void {
     const messageTitle = createElement({
@@ -110,7 +112,7 @@ export class UnreadMessages {
   /**
    * Метод создает список сообщений, и добавляет его в контейнер.
    *
-   * @see createElement - Функция для создания DOM-элемента
+   * @see {@link createElement} - Функция для создания DOM-элементов
    */
   private _createMessageList(): void {
     this._messageList = createElement({
@@ -143,6 +145,9 @@ export class UnreadMessages {
    */
   private _loadMessages(): void {
     if (this._subscription) this._subscription.unsubscribe();
+
+    // Показываем лоадер при старте (если ещё нет данных)
+    if (this._messageList.children.length === 0) this._showLoader();
 
     const sseUrl = `${process.env.SERVER_URL}/events/unread-updates`;
 
@@ -192,10 +197,9 @@ export class UnreadMessages {
    *
    * @param {IMessage[]} messages - Список сообщений, которые нужно отобразить
    *
-   * @see createElement - Функция для создания DOM-элемента
+   * @see {@link createElement} - Функция для создания DOM-элементов
    */
   private _renderMessages(messages: IMessage[]): void {
-    // Очищаем список перед обновлением
     this._messageList.innerHTML = '';
 
     if (messages.length === 0) {
@@ -217,10 +221,47 @@ export class UnreadMessages {
       return;
     }
 
+    const currentIds = new Set<string>();
+    const newItems: HTMLElement[] = [];
+
     messages.forEach((message) => {
+      currentIds.add(message.id);
       const listItem = this._createMessageItem(message);
+
+      // Анимируем ТОЛЬКО если:
+      // 1. Это не первая загрузка И
+      // 2. Сообщение новое (нет в предыдущем списке)
+      const shouldAnimate =
+        !this._isInitialLoad && !this._existingMessageIds.has(message.id);
+
+      if (shouldAnimate) {
+        listItem.classList.add('widget-email__unread-item--new');
+        newItems.push(listItem);
+      }
+
       this._messageList.prepend(listItem);
     });
+
+    // Обновляем состояние
+    this._existingMessageIds = currentIds;
+    this._isInitialLoad = false;
+
+    // Запускаем каскадную анимацию только для новых
+    if (newItems.length > 0) {
+      newItems.forEach((item, index) => {
+        item.style.transitionDelay = `${index * 100}ms`;
+        void item.offsetWidth; // force reflow
+        item.classList.remove('widget-email__unread-item--new');
+      });
+
+      // Очистка inline-стилей
+      setTimeout(
+        () => {
+          newItems.forEach((item) => (item.style.transitionDelay = ''));
+        },
+        newItems.length * 100 + 400
+      );
+    }
   }
 
   /**
@@ -230,7 +271,7 @@ export class UnreadMessages {
    *
    * @returns {HTMLElement} Элемент списка сообщений
    *
-   * @see createElement - Функция для создания DOM-элемента
+   * @see {@link createElement} - Функция для создания DOM-элементов
    */
   private _createMessageItem(message: IMessage): HTMLElement {
     const received = formatTimestamp(message.received);
@@ -306,6 +347,35 @@ export class UnreadMessages {
   }
 
   /**
+   * Отображает индикатор загрузки в списке сообщений
+   *
+   * @private
+   * @description
+   * 1. Очищает текущий список сообщений
+   * 2. Создает элемент-загрузчик (loader) с визуальным стилем
+   * 3. Добавляет элемент загрузки в начало списка
+   *
+   * @see this._messageList - Ссылка на DOM-элемент списка сообщений
+   * @see {@link createElement} - Функция для создания DOM-элементов
+   */
+  private _showLoader(): void {
+    this._messageList.innerHTML = '';
+
+    const loaderItem = createElement({
+      tag: 'li',
+      className: 'widget-email__unread-item--loader',
+      children: [
+        {
+          tag: 'div',
+          className: 'widget-email__loader',
+        },
+      ],
+    });
+
+    this._messageList.prepend(loaderItem);
+  }
+
+  /**
    * Метод отображает ошибку.
    *
    * @param {string} text - Текст ошибки
@@ -314,7 +384,7 @@ export class UnreadMessages {
    * - Метод очищает список перед отображением ошибки.
    * - Метод создает элемент ошибки в виде тега `<li></li>`, и добавляет его в список.
    *
-   * @see createElement - Функция для создания DOM-элемента
+   * @see {@link createElement} - Функция для создания DOM-элементов
    */
   private _showError(text: string): void {
     this._messageList.innerHTML = '';
