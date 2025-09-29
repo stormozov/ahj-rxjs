@@ -1,5 +1,7 @@
 # Домашнее задание к занятию "11. RxJS"
 
+[![CI Pipeline](https://github.com/stormozov/ahj-rxjs/actions/workflows/ci.yml/badge.svg)](https://github.com/stormozov/ahj-rxjs/actions/workflows/ci.yml)
+
 Правила сдачи задания:
 
 1. **Важно**: в рамках этого ДЗ можно использовать любой менеджер пакетов
